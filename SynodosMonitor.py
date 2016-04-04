@@ -146,26 +146,26 @@ markdown = ("#### _Synodos Project updates will be released here periodically_\n
             "**Contributors**\n",
             "${synapsetable?query=SELECT contributor%2C COUNT%28%2A%29 FROM syn5864359 where ", 
             "changeTime > %d" % second,
-            "&limit=5 GROUP BY contributor ORDER BY COUNT%28%2A%29 DES}\n",
+            "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5 }\n",
             "**Activity**\n",
             "${synapsetable?query=SELECT entityName%2CentityId%2Ccontributor FROM syn5864359 where ",
-            "changeTime > %d&limit=5}\n\n" % second,
+            "changeTime > %d ORDER BY changeTime DESC&limit=5}\n\n" % second,
             "###%s to %s\n" % (secondstartdate,thirdenddate),
             "**Contributors**\n",
             "${synapsetable?query=SELECT contributor%2C COUNT%28%2A%29 FROM syn5864359 where ",
             "changeTime > %d and changeTime < %d" % (third,second),
-            "&limit=5 GROUP BY contributor ORDER BY COUNT%28%2A%29 DES}\n",
+            "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
             "**Activity**\n",
             "${synapsetable?query=SELECT entityName%2CentityId%2Ccontributor FROM syn5864359 where ",
-            "changeTime > %d and changeTime < %d&limit=5}\n\n" %(third, second),
+            "changeTime > %d and changeTime < %d ORDER BY changeTime DESC&limit=5}\n\n" %(third, second),
             "###%s to %s\n" % (firstdate, secondenddate),
             "**Contributors**\n",
             "${synapsetable?query=SELECT contributor%2C COUNT%28%2A%29 FROM syn5864359 where ",
             "changeTime < %d" % third,
-            "&limit=5 GROUP BY contributor ORDER BY COUNT%28%2A%29 DES}\n",
+            "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
             "**Activity**\n",
             "${synapsetable?query=SELECT entityName%2CentityId%2Ccontributor FROM syn5864359 where ",
-            "changeTime < %d&limit=5}" % third)
+            "changeTime < %d ORDER BY changeTime DESC&limit=5}" % third)
 markdown = ''.join(markdown)
 wikipage.markdown = markdown
 syn.store(wikipage)

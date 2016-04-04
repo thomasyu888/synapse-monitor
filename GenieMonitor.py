@@ -6,6 +6,8 @@ import time
 import argparse
 import multiprocessing.dummy as mp
 import pandas as pd
+from synapseclient import Table
+
 
 ONEDAY=86400000 #default delta t is 10 days prior
 
@@ -13,7 +15,7 @@ ONEDAY=86400000 #default delta t is 10 days prior
 def findNewFiles(args, id):
     """Performs query query to find changed entities in id. """
 
-    QUERY = "select id, name, versionNumber, modifiedOn, modifiedByPrincipalId, nodeType from entity where projectId=='%s' and modifiedOn>%i" 
+    QUERY = "select id, name, center, fileType, versionNumber, modifiedOn, modifiedByPrincipalId, nodeType from entity where projectId=='%s' and modifiedOn>%i" 
     t = calendar.timegm(time.gmtime())*1000
     project = syn.get(id)
     #Determine the last audit time or overide with lastTime
@@ -99,8 +101,103 @@ entityList = [item for sublist in entityList for item in sublist]
 #Filter out projects and folders
 entityList = [e for e in entityList if e['entity.nodeType'] not in ['project', 'folder']]
 print 'Total number of entities = ', len(entityList)
-temp = pd.DataFrame(entityList)
-temp.to_csv("/Users/thomasyu/sandbox/dummy.csv")
+
+results = pd.DataFrame(entityList)
+center = results['entity.center']
+fileType = results['entity.fileType']
+
+center[center.isnull()] = ''
+fileType[fileType.isnull()] = ''
+
+for index,i in enumerate(center):
+    if i!='':
+        results['entity.center'][index] = i[0]
+for index,i in enumerate(fileType):
+    if i!='':
+        results['entity.fileType'][index] = i[0]
+
+#results.to_csv("dummy.csv")
+resultDf = pd.DataFrame(columns = ["entityName","changeTime","entityId","contributor","center","fileType"])
+resultDf['entityName'] = results['entity.name']
+resultDf['changeTime'] = results['entity.modifiedOn']
+resultDf['entityId'] = results['entity.id']
+resultDf['contributor'] = results['user']
+resultDf['center'] = results['entity.center']
+resultDf['fileType'] = results['entity.fileType']
+
+week_interval = ONEDAY * 7
+
+third = args.days + week_interval + 1
+second = third + week_interval
+
+#3rd week
+firstdate = synapseclient.utils.from_unix_epoch_time(args.days).strftime("%b/%d/%Y")
+#2nd week
+secondstartdate = synapseclient.utils.from_unix_epoch_time(third).strftime("%b/%d/%Y")
+secondenddate = synapseclient.utils.from_unix_epoch_time(third - ONEDAY).strftime("%b/%d/%Y")
+#1st week
+thirdstartdate = synapseclient.utils.from_unix_epoch_time(second).strftime("%b/%d/%Y")
+thirdenddate = synapseclient.utils.from_unix_epoch_time(second - ONEDAY).strftime("%b/%d/%Y")
+present = synapseclient.utils.from_unix_epoch_time(calendar.timegm(time.gmtime())*1000).strftime("%b/%d/%Y")
+
+schema = syn.get("syn5874214")
+existingtable = syn.tableQuery("select * from syn5874214")
+existingtable = existingtable.asDataFrame()
+emptyDate = [str(i) for i in resultDf['changeTime']]
+newTable = resultDf['entityName'] + emptyDate
+tableDate = [str(i) for i in existingtable['changeTime']]
+oldTable = existingtable['entityName'] + tableDate
+
+upload = resultDf[~newTable.isin(oldTable)]
+
+print("Uploading new table entries")
+syn.store(Table(schema, upload))
+
+print("Updating wiki page")
+wikipage = syn.getWiki("syn3380222",subpageId=396117)
+
+markdown = ("#### _GENIE updates will be released here periodically_\n\n",
+            "###%s to %s\n" % (thirdstartdate, present),
+            "**Contributors**\n",
+            "${synapsetable?query=SELECT center%2Ccontributor%2C COUNT%28%2A%29 FROM syn5874214 where ", 
+            "changeTime > %d" % second,
+            "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5 }\n",
+            "**fileTypes**\n",
+            "${synapsetable?query=SELECT center%2CfileType%2C COUNT%28%2A%29 FROM syn5874214 where ", 
+            "changeTime > %d" % second,
+            "GROUP BY fileType ORDER BY COUNT%28%2A%29 DESC&limit=5 }\n",
+            "**Activity**\n",
+            "${synapsetable?query=SELECT entityName%2CentityId%2Ccontributor%2Ccenter%2CfileType FROM syn5874214 where ",
+            "changeTime > %d ORDER BY changeTime DESC&limit=5}\n\n" % second,
+            "###%s to %s\n" % (secondstartdate,thirdenddate),
+            "**Contributors**\n",
+            "${synapsetable?query=SELECT center%2Ccontributor%2C COUNT%28%2A%29 FROM syn5874214 where ",
+            "changeTime > %d and changeTime < %d" % (third,second),
+            "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
+            "**fileTypes**\n",
+            "${synapsetable?query=SELECT center%2CfileType%2C COUNT%28%2A%29 FROM syn5874214 where ", 
+            "changeTime > %d and changeTime < %d" % (third,second),
+            "GROUP BY fileType ORDER BY COUNT%28%2A%29 DESC&limit=5 }\n",
+            "**Activity**\n",
+            "${synapsetable?query=SELECT entityName%2CentityId%2Ccontributor%2Ccenter%2CfileType FROM syn5874214 where ",
+            "changeTime > %d and changeTime < %d ORDER BY changeTime DESC&limit=5}\n\n" %(third, second),
+            "###%s to %s\n" % (firstdate, secondenddate),
+            "**Contributors**\n",
+            "${synapsetable?query=SELECT center%2Ccontributor%2C COUNT%28%2A%29 FROM syn5874214 where ",
+            "changeTime < %d" % third,
+            "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
+            "**fileTypes**\n",
+            "${synapsetable?query=SELECT center%2CfileType%2C COUNT%28%2A%29 FROM syn5874214 where ", 
+            "changeTime < %d" % third,
+            "GROUP BY fileType ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
+            "**Activity**\n",
+            "${synapsetable?query=SELECT entityName%2CentityId%2Ccontributor%2Ccenter%2CfileType FROM syn5874214 where ",
+            "changeTime < %d ORDER BY changeTime DESC&limit=5}" % third)
+markdown = ''.join(markdown)
+wikipage.markdown = markdown
+syn.store(wikipage)
+
+
 #Prepare and send Message
 syn.sendMessage([args.userId], 
                 args.emailSubject, 
