@@ -11,11 +11,10 @@ from synapseclient import Table
 
 ONEDAY=86400000 #default delta t is 10 days prior
 
-
 def findNewFiles(args, id):
     """Performs query query to find changed entities in id. """
 
-    QUERY = "select id, name, versionNumber, modifiedOn, modifiedByPrincipalId, nodeType from entity where projectId=='%s' and modifiedOn>%i" 
+    QUERY = "select id, name, versionNumber, createdOn, createdByPrincipalId, nodeType, center, fileType, dataType, organism, normalization from entity where projectId=='%s' and createdOn>%i" 
     t = calendar.timegm(time.gmtime())*1000
     project = syn.get(id)
     #Determine the last audit time or overide with lastTime
@@ -31,8 +30,8 @@ def findNewFiles(args, id):
     for r in results:
         r['projectId'] = id
         r['projectName'] = project.name
-        r['date'] = synapseclient.utils.from_unix_epoch_time(r['entity.modifiedOn']).strftime("%b/%d/%Y %H:%M")
-        r['user'] = syn.getUserProfile(r['entity.modifiedByPrincipalId'])['userName']
+        r['date'] = synapseclient.utils.from_unix_epoch_time(r['entity.createdOn']).strftime("%b/%d/%Y %H:%M")
+        r['user'] = syn.getUserProfile(r['entity.createdByPrincipalId'])['userName']
         r['type'] = r['entity.nodeType']
         
     #Set lastAuditTimeStamp
@@ -60,7 +59,7 @@ def composeMessage(entityList):
               '<td>%(entity.versionNumber)s</td>'
               '<td>%(type)s</td>'
               '<td>%(date)s</td>'
-              '<td><a href="https://www.synapse.org/#!Profile:%(entity.modifiedByPrincipalId)s">%(user)s</a></td></tr>')%item for 
+              '<td><a href="https://www.synapse.org/#!Profile:%(entity.createdByPrincipalId)s">%(user)s</a></td></tr>')%item for 
              item in entityList]
     return messageHead + '\n'.join(lines)+'</table></body>'
 
@@ -94,6 +93,9 @@ else:
 syn.login(silent=True) 
 args.userId = syn.getUserProfile()['ownerId'] if args.userId is None else args.userId
 
+#Last week,
+#Last month
+#Last 6 months
 
 #query each project then combine into long list
 entityList = p.map(lambda project: findNewFiles(args, project), args.projects)
@@ -104,26 +106,55 @@ print 'Total number of entities = ', len(entityList)
 
 results = pd.DataFrame(entityList)
 
-resultDf = pd.DataFrame(columns = ["entityName","changeTime","entityId","contributor"])
+
+#Add in annotations
+center = results['entity.center']
+fileType = results['entity.fileType']
+dataType = results['entity.dataType']
+organism = results['entity.organism']
+normalization = results['entity.normalization']
+
+center[center.isnull()] = ''
+fileType[fileType.isnull()] = ''
+dataType[dataType.isnull()] = ''
+organism[organism.isnull()] = ''
+normalization[normalization.isnull()] = ''
+
+for index,i in enumerate(center):
+    if i!='':
+        results['entity.center'][index] = i[0]
+for index,i in enumerate(fileType):
+    if i!='':
+        results['entity.fileType'][index] = i[0]
+for index,i in enumerate(dataType):
+    if i!='':
+        results['entity.dataType'][index] = i[0]
+for index,i in enumerate(organism):
+    if i!='':
+        results['entity.organism'][index] = i[0]
+for index,i in enumerate(normalization):
+    if i!='':
+        results['entity.normalization'][index] = i[0]
+
+
+
+resultDf = pd.DataFrame(columns = ["entityName","changeTime","entityId","contributor","center","fileType","dataType","organism","normalization"])
 resultDf['entityName'] = results['entity.name']
-resultDf['changeTime'] = results['entity.modifiedOn']
+resultDf['changeTime'] = results['entity.createdOn']
 resultDf['entityId'] = results['entity.id']
 resultDf['contributor'] = results['user']
+resultDf['center'] = results['entity.center']
+resultDf['fileType'] = results['entity.fileType']
+resultDf['dataType'] = results['entity.dataType']
+resultDf['organism'] = results['entity.organism']
+resultDf['normalization'] = results['entity.normalization']
 
-week_interval = ONEDAY * 7
 
-third = args.days + week_interval + 1
-second = third + week_interval
+week_interval = ONEDAY * 6
 
-#3rd week
-firstdate = synapseclient.utils.from_unix_epoch_time(args.days).strftime("%b/%d/%Y")
-#2nd week
-secondstartdate = synapseclient.utils.from_unix_epoch_time(third).strftime("%b/%d/%Y")
-secondenddate = synapseclient.utils.from_unix_epoch_time(third - ONEDAY).strftime("%b/%d/%Y")
-#1st week
-thirdstartdate = synapseclient.utils.from_unix_epoch_time(second).strftime("%b/%d/%Y")
-thirdenddate = synapseclient.utils.from_unix_epoch_time(second - ONEDAY).strftime("%b/%d/%Y")
-present = synapseclient.utils.from_unix_epoch_time(calendar.timegm(time.gmtime())*1000).strftime("%b/%d/%Y")
+third = args.days + week_interval*25
+second = third + week_interval*4
+
 
 schema = syn.get("syn5864359")
 existingtable = syn.tableQuery("select * from syn5864359")
@@ -140,32 +171,35 @@ syn.store(Table(schema, upload))
 
 print("Updating wiki page")
 wikipage = syn.getWiki("syn2347420",subpageId=236096)
-
+#-d 180
 markdown = ("#### _Synodos Project updates will be released here periodically_\n\n",
-            "###%s to %s\n" % (thirdstartdate, present),
+            "###Last week\n",
             "**Contributors**\n",
             "${synapsetable?query=SELECT contributor%2C COUNT%28%2A%29 FROM syn5864359 where ", 
             "changeTime > %d" % second,
             "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5 }\n",
-            "**Activity**\n",
-            "${synapsetable?query=SELECT entityName%2CentityId%2Ccontributor FROM syn5864359 where ",
-            "changeTime > %d ORDER BY changeTime DESC&limit=5}\n\n" % second,
-            "###%s to %s\n" % (secondstartdate,thirdenddate),
+            "**Data Types**\n",
+            "${synapsetable?query=SELECT center%2C dataType%2CCOUNT%28%2A%29 FROM syn5864359 where ",
+            "changeTime > %s AND center<>%27%27 AND dataType<>%27%27" %second,
+            "GROUP BY dataType ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
+            "###Last month\n",
             "**Contributors**\n",
             "${synapsetable?query=SELECT contributor%2C COUNT%28%2A%29 FROM syn5864359 where ",
-            "changeTime > %d and changeTime < %d" % (third,second),
+            "changeTime > %d" % third,
             "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
-            "**Activity**\n",
-            "${synapsetable?query=SELECT entityName%2CentityId%2Ccontributor FROM syn5864359 where ",
-            "changeTime > %d and changeTime < %d ORDER BY changeTime DESC&limit=5}\n\n" %(third, second),
-            "###%s to %s\n" % (firstdate, secondenddate),
+            "**Data Types**\n",
+            "${synapsetable?query=SELECT center%2C dataType%2CCOUNT%28%2A%29 FROM syn5864359 where ",
+            "changeTime > %s AND center<>%27%27 AND dataType<>%27%27" %third,
+            "GROUP BY dataType ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
+            "###Last six months\n",
             "**Contributors**\n",
             "${synapsetable?query=SELECT contributor%2C COUNT%28%2A%29 FROM syn5864359 where ",
-            "changeTime < %d" % third,
+            "changeTime > %d" % args.days,
             "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
-            "**Activity**\n",
-            "${synapsetable?query=SELECT entityName%2CentityId%2Ccontributor FROM syn5864359 where ",
-            "changeTime < %d ORDER BY changeTime DESC&limit=5}" % third)
+            "**Data Types**\n",
+            "${synapsetable?query=SELECT center%2C dataType%2CCOUNT%28%2A%29 FROM syn5864359 where ",
+            "changeTime > %s AND center<>%27%27 AND dataType<>%27%27" %args.days,
+            "GROUP BY dataType ORDER BY COUNT%28%2A%29 DESC&limit=5}")
 markdown = ''.join(markdown)
 wikipage.markdown = markdown
 syn.store(wikipage)
