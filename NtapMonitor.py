@@ -15,7 +15,7 @@ ONEDAY=86400000 #default delta t is 10 days prior
 def findNewFiles(args, id):
     """Performs query query to find changed entities in id. """
 
-    QUERY = "select id, name, versionNumber, modifiedOn, modifiedByPrincipalId, nodeType from entity where projectId=='%s' and modifiedOn>%i" 
+    QUERY = "select id, name, versionNumber, createdOn, createdByPrincipalId, nodeType, dataType from entity where projectId=='%s' and modifiedOn>%i" 
     t = calendar.timegm(time.gmtime())*1000
     project = syn.get(id)
     #Determine the last audit time or overide with lastTime
@@ -31,10 +31,10 @@ def findNewFiles(args, id):
     for r in results:
         r['projectId'] = id
         r['projectName'] = project.name
-        r['date'] = synapseclient.utils.from_unix_epoch_time(r['entity.modifiedOn']).strftime("%b/%d/%Y %H:%M")
-        r['user'] = syn.getUserProfile(r['entity.modifiedByPrincipalId'])['userName']
+        r['date'] = synapseclient.utils.from_unix_epoch_time(r['entity.createdOn']).strftime("%b/%d/%Y %H:%M")
+        r['user'] = syn.getUserProfile(r['entity.createdByPrincipalId'])['userName']
         r['type'] = r['entity.nodeType']
-        
+
     #Set lastAuditTimeStamp
     if args.updateProject:
         project.lastAuditTimeStamp = t
@@ -60,7 +60,7 @@ def composeMessage(entityList):
               '<td>%(entity.versionNumber)s</td>'
               '<td>%(type)s</td>'
               '<td>%(date)s</td>'
-              '<td><a href="https://www.synapse.org/#!Profile:%(entity.modifiedByPrincipalId)s">%(user)s</a></td></tr>')%item for 
+              '<td><a href="https://www.synapse.org/#!Profile:%(entity.createdByPrincipalId)s">%(user)s</a></td></tr>')%item for 
              item in entityList]
     return messageHead + '\n'.join(lines)+'</table></body>'
 
@@ -103,27 +103,27 @@ entityList = [e for e in entityList if e['entity.nodeType'] not in ['project', '
 print 'Total number of entities = ', len(entityList)
 
 results = pd.DataFrame(entityList)
-resultDf = pd.DataFrame(columns = ["project","entityName","changeTime","entityId","contributor"])
+
+dataType = results['entity.dataType']
+dataType[dataType.isnull()] = ''
+
+for index,i in enumerate(dataType):
+    if i!='':
+        results['entity.dataType'][index] = i[0]
+
+resultDf = pd.DataFrame(columns = ["project","entityName","changeTime","entityId","contributor","dataType"])
 resultDf['project'] = results['projectName']
 resultDf['entityName'] = results['entity.name']
-resultDf['changeTime'] = results['entity.modifiedOn']
+resultDf['changeTime'] = results['entity.createdOn']
 resultDf['entityId'] = results['entity.id']
 resultDf['contributor'] = results['user']
+resultDf['dataType'] = results['entity.dataType']
 
-week_interval = ONEDAY * 7
 
-third = args.days + week_interval + 1
-second = third + week_interval
+week_interval = ONEDAY * 6
 
-#3rd week
-firstdate = synapseclient.utils.from_unix_epoch_time(args.days).strftime("%b/%d/%Y")
-#2nd week
-secondstartdate = synapseclient.utils.from_unix_epoch_time(third).strftime("%b/%d/%Y")
-secondenddate = synapseclient.utils.from_unix_epoch_time(third - ONEDAY).strftime("%b/%d/%Y")
-#1st week
-thirdstartdate = synapseclient.utils.from_unix_epoch_time(second).strftime("%b/%d/%Y")
-thirdenddate = synapseclient.utils.from_unix_epoch_time(second - ONEDAY).strftime("%b/%d/%Y")
-present = synapseclient.utils.from_unix_epoch_time(calendar.timegm(time.gmtime())*1000).strftime("%b/%d/%Y")
+third = args.days + week_interval*25
+second = third + week_interval*4
 
 schema = syn.get("syn5870873")
 existingtable = syn.tableQuery("select * from syn5870873")
@@ -138,50 +138,42 @@ print("Updating Table")
 syn.store(Table(schema, upload))
 
 print("Updating wiki page")
-wikipage = syn.getWiki("syn4990358",subpageId=396210)
+wikipage = syn.getWiki("syn4939478",subpageId=396217)
 
+#-d 180
 markdown = ("#### _NTAP Project updates will be released here periodically_\n\n",
-            "###%s to %s\n" % (thirdstartdate, present),
-            "**Contributors**\n",
-            "${synapsetable?query=SELECT contributor%2C COUNT%28%2A%29 FROM syn5870873 where ", 
+            "To see the most recent files added, please [see the Synapse Table](https://www.synapse.org/#!Synapse:syn5870873/tables/query/eyJsaW1pdCI6MjUsICJzcWwiOiJTRUxFQ1QgKiBGUk9NIHN5bjU4NzA4NzMgT1JERVIgQlkgXCJjaGFuZ2VUaW1lXCIgQVNDIiwgImlzQ29uc2lzdGVudCI6dHJ1ZSwgIm9mZnNldCI6MH0=)\n\n",
+            "Summaries of the latest updates can be found below.\n\n",
+            "###Last week\n",
+            "**Projects**\n",
+            "${synapsetable?query=SELECT project%2C COUNT%28%2A%29 FROM syn5870873 where ", 
             "changeTime > %d" % second,
-            "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
-            "**Projects updated**\n",
+            "GROUP BY project ORDER BY COUNT%28%2A%29 DESC&limit=5 }\n",
+            "**Data Types**\n",
+            "${synapsetable?query=SELECT dataType%2CCOUNT%28%2A%29 FROM syn5870873 where ",
+            "changeTime > %d" %second,
+            "GROUP BY dataType ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
+            "###Last month\n",
+            "**Projects**\n",
             "${synapsetable?query=SELECT project%2C COUNT%28%2A%29 FROM syn5870873 where ",
-            "changeTime > %d" % second,
-            "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
-            "**Activity**\n",
-            "${synapsetable?query=SELECT project%2CentityName%2CentityId%2Ccontributor FROM syn5870873 where ",
-            "changeTime > %d ORDER BY changeTime DESC&limit=5}\n\n" % second,
-            "###%s to %s\n" % (secondstartdate,thirdenddate),
-            "**Contributors**\n",
-            "${synapsetable?query=SELECT contributor%2C COUNT%28%2A%29 FROM syn5870873 where ",
-            "changeTime > %d and changeTime < %d" % (third,second),
-            "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
-            "**Projects updated**\n",
+            "changeTime > %d" % third,
+            "GROUP BY project ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
+            "**Data Types**\n",
+            "${synapsetable?query=SELECT dataType%2CCOUNT%28%2A%29 FROM syn5870873 where ",
+            "changeTime > %d" %third,
+            "GROUP BY dataType ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
+            "###Last six months\n",
+            "**Projects**\n",
             "${synapsetable?query=SELECT project%2C COUNT%28%2A%29 FROM syn5870873 where ",
-            "changeTime > %d and changeTime < %d" % (third,second),
-            "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
-            "**Activity**\n",
-            "${synapsetable?query=SELECT project%2CentityName%2CentityId%2Ccontributor FROM syn5870873 where ",
-            "changeTime > %d and changeTime < %d ORDER BY changeTime DESC&limit=5}\n\n" %(third, second),
-            "###%s to %s\n" % (firstdate, secondenddate),
-            "**Contributors**\n",
-            "${synapsetable?query=SELECT contributor%2C COUNT%28%2A%29 FROM syn5870873 where ",
-            "changeTime < %d" % third,
-            "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
-            "**Projects updated**\n",
-            "${synapsetable?query=SELECT project%2C COUNT%28%2A%29 FROM syn5870873 where ",
-            "changeTime < %d" % third,
-            "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
-            "**Activity**\n",
-            "${synapsetable?query=SELECT project%2CentityName%2CentityId%2Ccontributor FROM syn5870873 where ",
-            "changeTime < %d ORDER BY changeTime DESC&limit=5}" % third)
-
+            "changeTime > %d" % args.days,
+            "GROUP BY project ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
+            "**Data Types**\n",
+            "${synapsetable?query=SELECT dataType%2CCOUNT%28%2A%29 FROM syn5870873 where ",
+            "changeTime > %d" %args.days,
+            "GROUP BY dataType ORDER BY COUNT%28%2A%29 DESC&limit=5}")
 markdown = ''.join(markdown)
 wikipage.markdown = markdown
 syn.store(wikipage)
-
 
 #Prepare and send Message
 syn.sendMessage([args.userId], 
