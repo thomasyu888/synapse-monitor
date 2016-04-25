@@ -11,6 +11,7 @@ from synapseclient import Table
 
 ONEDAY=86400000 #default delta t is 10 days prior
 
+pd.options.mode.chained_assignment = None
 
 def findNewFiles(args, id):
     """Performs query query to find changed entities in id. """
