@@ -185,15 +185,15 @@ markdown = ("#### _GENIE updates will be released here periodically_\n\n",
             "###%s to %s\n" % (firstdate, secondenddate),
             "**Contributors**\n",
             "${synapsetable?query=SELECT center%2Ccontributor%2C COUNT%28%2A%29 FROM syn5874214 where ",
-            "changeTime < %d" % third,
+            "changeTime > %d and changeTime < %d" % (args.days,third),
             "GROUP BY contributor ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
             "**fileTypes**\n",
             "${synapsetable?query=SELECT center%2CfileType%2C COUNT%28%2A%29 FROM syn5874214 where ", 
-            "changeTime < %d" % third,
+            "changeTime > %d and changeTime < %d" % (args.days,third),
             "GROUP BY fileType ORDER BY COUNT%28%2A%29 DESC&limit=5}\n",
             "**Activity**\n",
             "${synapsetable?query=SELECT entityName%2CentityId%2Ccontributor%2Ccenter%2CfileType FROM syn5874214 where ",
-            "changeTime < %d ORDER BY changeTime DESC&limit=5}" % third)
+            "changeTime > %d and changeTime < %d ORDER BY changeTime DESC&limit=5}" % (args.days,third))
 markdown = ''.join(markdown)
 wikipage.markdown = markdown
 syn.store(wikipage)
