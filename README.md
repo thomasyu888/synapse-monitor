@@ -1,6 +1,6 @@
 # Synapse Monitoring
 
-Monitor Synapse Projects for new entities and notify specified users.  This package currently does the following:
+This package is inspired by the old [synaspeMonitor](https://github.com/Sage-Bionetworks/synapseMonitor) package.  Monitors Synapse Projects for new entities and notify specified users.  This package currently does the following:
 
 1. Create a "Project Monitoring" Table in the specified project.  If the table already exists, it will simply get the existing table
 2. Crawl through all synapse entities in the project to obtain each entity (except folders)
